@@ -1036,7 +1036,7 @@ let rec s_type ctx t =
 	| TAbstract (a,tl) ->
 		s_type_path a.a_path ^ s_type_params ctx tl
 	| TFun ([],t) ->
-		"Void -> " ^ s_fun ctx t false
+		"() -> " ^ s_fun ctx t false
 	| TFun (l,t) ->
 		let args = match l with
 			| [] -> "()"
