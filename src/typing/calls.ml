@@ -31,9 +31,18 @@ let make_call ctx e params t ?(force_inline=false) p =
 		if not force_inline then begin
 			if f.cf_kind <> Method MethInline then raise Exit;
 		end else begin
-			delay ctx PFinal (fun () ->
-				if has_class_field_flag f CfOverridden then error (Printf.sprintf "Cannot force inline-call to %s because it is overridden" f.cf_name) p
-			);
+			match cl with
+			| None ->
+				()
+			| Some c ->
+				(* Delay this to filters because that's when cl_descendants is set. *)
+				ctx.com.callbacks#add_before_save (fun () ->
+					let rec has_override c =
+						List.exists (fun cf -> cf.cf_name = f.cf_name) c.cl_overrides
+						|| List.exists has_override c.cl_descendants
+					in
+					if List.exists has_override c.cl_descendants then error (Printf.sprintf "Cannot force inline-call to %s because it is overridden" f.cf_name) p
+				)
 		end;
 		let config = match cl with
 			| Some ({cl_kind = KAbstractImpl _}) when Meta.has Meta.Impl f.cf_meta ->
@@ -110,11 +119,40 @@ let mk_array_set_call ctx (cf,tf,r,e1,e2o) c ebase p =
 			make_call ctx ef [ebase;e1;evalue] r p
 
 let call_to_string ctx ?(resume=false) e =
-	(* Ignore visibility of the toString field. *)
-	ctx.meta <- (Meta.PrivateAccess,[],e.epos) :: ctx.meta;
-	let acc = type_field (TypeFieldConfig.create resume) ctx e "toString" e.epos MCall in
-	ctx.meta <- List.tl ctx.meta;
-	!build_call_ref ctx acc [] (WithType.with_type ctx.t.tstring) e.epos
+	let gen_to_string e =
+		(* Ignore visibility of the toString field. *)
+		ctx.meta <- (Meta.PrivateAccess,[],e.epos) :: ctx.meta;
+		let acc = type_field (TypeFieldConfig.create resume) ctx e "toString" e.epos MCall in
+		ctx.meta <- List.tl ctx.meta;
+		!build_call_ref ctx acc [] (WithType.with_type ctx.t.tstring) e.epos
+	in
+	if ctx.com.config.pf_static && not (is_nullable e.etype) then
+		gen_to_string e
+	else begin (* generate `if(e == null) 'null' else e.toString()` *)
+		let rec needs_temp_var e =
+			match e.eexpr with
+			| TLocal _ | TTypeExpr _ | TConst _ -> false
+			| TField (e, _) | TParenthesis e -> needs_temp_var e
+			| _ -> true
+		in
+		let string_null = mk (TConst (TString "null")) ctx.t.tstring e.epos in
+		if needs_temp_var e then
+			let tmp = alloc_var VGenerated "tmp" e.etype e.epos in
+			let tmp_local = mk (TLocal tmp) tmp.v_type tmp.v_pos in
+			let check_null = mk (TBinop (OpEq, tmp_local, mk (TConst TNull) tmp.v_type tmp.v_pos)) ctx.t.tbool e.epos in
+			{
+				eexpr = TBlock([
+					mk (TVar (tmp, Some e)) tmp.v_type tmp.v_pos;
+					mk (TIf (check_null, string_null, Some (gen_to_string tmp_local))) ctx.t.tstring tmp.v_pos;
+
+				]);
+				etype = ctx.t.tstring;
+				epos = e.epos;
+			}
+		else
+			let check_null = mk (TBinop (OpEq, e, mk (TConst TNull) e.etype e.epos)) ctx.t.tbool e.epos in
+			mk (TIf (check_null, string_null, Some (gen_to_string e))) ctx.t.tstring e.epos
+	end
 
 let rec unify_call_args' ctx el args r callp inline force_inline =
 	let in_call_args = ctx.in_call_args in
@@ -475,7 +513,21 @@ let rec acc_get ctx g p =
 		| _ -> assert false)
 	| AKInline (e,f,fmode,t) ->
 		(* do not create a closure for static calls *)
-		let cmode = (match fmode with FStatic _ -> fmode | FInstance (c,tl,f) -> FClosure (Some (c,tl),f) | _ -> assert false) in
+		let cmode,apply_params = match fmode with
+			| FStatic(c,_) ->
+				let f = match c.cl_kind with
+					| KAbstractImpl a when Meta.has Meta.Enum a.a_meta ->
+						(* Enum abstracts have to apply their type parameters because they are basically statics with type params (#8700). *)
+						let monos = List.map (fun _ -> mk_mono()) a.a_params in
+						apply_params a.a_params monos;
+					| _ -> (fun t -> t)
+				in
+				fmode,f
+			| FInstance (c,tl,f) ->
+				(FClosure (Some (c,tl),f),(fun t -> t))
+			| _ ->
+				assert false
+		in
 		ignore(follow f.cf_type); (* force computing *)
 		begin match f.cf_kind,f.cf_expr with
 		| _ when not (ctx.com.display.dms_inline) ->
@@ -525,24 +577,35 @@ let rec acc_get ctx g p =
 				| _ -> e_def
 			end
 		| Var _,Some e ->
-			let rec loop e = Type.map_expr loop { e with epos = p } in
+			let rec loop e = Type.map_expr loop { e with epos = p; etype = apply_params e.etype } in
 			let e = loop e in
 			let e = Inline.inline_metadata e f.cf_meta in
-			if not (type_iseq f.cf_type e.etype) then mk (TCast(e,None)) f.cf_type e.epos
+			let tf = apply_params f.cf_type in
+			if not (type_iseq tf e.etype) then mk (TCast(e,None)) tf e.epos
 			else e
 		| Var _,None when ctx.com.display.dms_display ->
 			 mk (TField (e,cmode)) t p
 		| Var _,None ->
 			error "Recursive inline is not supported" p
 		end
-	| AKMacro _ ->
-		assert false
+	| AKMacro(e,cf) ->
+		(* If we are in display mode, we're probably hovering a macro call subject. Just generate a normal field. *)
+		if ctx.in_display then begin match e.eexpr with
+			| TTypeExpr (TClassDecl c) ->
+				mk (TField(e,FStatic(c,cf))) cf.cf_type e.epos
+			| _ ->
+				error "Invalid macro access" p
+		end else
+			error "Invalid macro access" p
 
-let rec build_call ctx acc el (with_type:WithType.t) p =
+let rec build_call ?(mode=MGet) ctx acc el (with_type:WithType.t) p =
+	let check_assign () = if mode = MSet then invalid_assign p in
 	match acc with
 	| AKInline (ethis,f,fmode,t) when Meta.has Meta.Generic f.cf_meta ->
+		check_assign();
 		type_generic_function ctx (ethis,fmode) el with_type p
 	| AKInline (ethis,f,fmode,t) ->
+		check_assign();
 		(match follow t with
 			| TFun (args,r) ->
 				let _,_,mk_call = unify_field_call ctx fmode el args r p true in
@@ -551,6 +614,7 @@ let rec build_call ctx acc el (with_type:WithType.t) p =
 				error (s_type (print_context()) t ^ " cannot be called") p
 		)
 	| AKUsing (et,cl,ef,eparam,forced_inline (* TOOD? *)) when Meta.has Meta.Generic ef.cf_meta ->
+		check_assign();
 		(match et.eexpr with
 		| TField(ec,fa) ->
 			type_generic_function ctx (ec,fa) el ~using_param:(Some eparam) with_type p
@@ -560,10 +624,11 @@ let rec build_call ctx acc el (with_type:WithType.t) p =
 		| Method MethMacro ->
 			let ethis = type_module_type ctx (TClassDecl cl) None p in
 			let eparam,f = push_this ctx eparam in
-			let e = build_call ctx (AKMacro (ethis,ef)) (eparam :: el) with_type p in
+			let e = build_call ~mode ctx (AKMacro (ethis,ef)) (eparam :: el) with_type p in
 			f();
 			e
 		| _ ->
+			check_assign();
 			let t = follow (field_type ctx cl [] ef p) in
 			(* for abstracts we have to apply their parameters to the static function *)
 			let t,tthis = match follow eparam.etype with
@@ -590,11 +655,11 @@ let rec build_call ctx acc el (with_type:WithType.t) p =
 		let f = (match ethis.eexpr with
 		| TTypeExpr (TClassDecl c) ->
 			(match ctx.g.do_macro ctx MExpr c.cl_path cf.cf_name el p with
-			| None -> (fun() -> type_expr ctx (EConst (Ident "null"),p) WithType.value)
+			| None -> (fun() -> type_expr ~mode ctx (EConst (Ident "null"),p) WithType.value)
 			| Some (EMeta((Meta.MergeBlock,_,_),(EBlock el,_)),_) -> (fun () -> let e = (!type_block_ref) ctx el with_type p in mk (TMeta((Meta.MergeBlock,[],p), e)) e.etype e.epos)
-			| Some e -> (fun() -> type_expr ctx e with_type))
+			| Some e -> (fun() -> type_expr ~mode ctx e with_type))
 		| _ ->
-			(* member-macro call : since we will make a static call, let's found the actual class and not its subclass *)
+			(* member-macro call : since we will make a static call, let's find the actual class and not its subclass *)
 			(match follow ethis.etype with
 			| TInst (c,_) ->
 				let rec loop c =
@@ -602,8 +667,8 @@ let rec build_call ctx acc el (with_type:WithType.t) p =
 						let eparam,f = push_this ctx ethis in
 						ethis_f := f;
 						let e = match ctx.g.do_macro ctx MExpr c.cl_path cf.cf_name (eparam :: el) p with
-							| None -> (fun() -> type_expr ctx (EConst (Ident "null"),p) WithType.value)
-							| Some e -> (fun() -> type_expr ctx e WithType.value)
+							| None -> (fun() -> type_expr ~mode ctx (EConst (Ident "null"),p) WithType.value)
+							| Some e -> (fun() -> type_expr ~mode ctx e WithType.value)
 						in
 						e
 					else

@@ -21,11 +21,12 @@
  */
 
 import php.*;
+import php.ArrayIterator as NativeArrayIterator;
 
 using php.Global;
 
 @:coreApi
-final class Array<T> implements ArrayAccess<Int, T> {
+final class Array<T> implements ArrayAccess<Int, T> implements IteratorAggregate<T> implements JsonSerializable<NativeIndexedArray<T>> {
 	public var length(default, null):Int;
 
 	var arr:NativeIndexedArray<T>;
@@ -45,12 +46,10 @@ final class Array<T> implements ArrayAccess<Int, T> {
 
 	public inline function filter(f:T->Bool):Array<T> {
 		var result = Syntax.arrayDecl();
-		var i = 0;
-		while (i < length) {
-			if (f(arr[i])) {
-				result.push(arr[i]);
+		for(item in arr) {
+			if (f(item)) {
+				result.push(item);
 			}
-			i++;
 		}
 		return wrap(result);
 	}
@@ -85,8 +84,8 @@ final class Array<T> implements ArrayAccess<Int, T> {
 		Global.array_splice(arr, pos, 0, Syntax.arrayDecl(x));
 	}
 
-	@:keep
-	public function iterator():Iterator<T> {
+	@:ifFeature("dynamic_read.iterator", "anon_optional_read.iterator", "anon_read.iterator")
+	public inline function iterator():Iterator<T> {
 		return new ArrayIterator(this);
 	}
 
@@ -109,10 +108,8 @@ final class Array<T> implements ArrayAccess<Int, T> {
 
 	public inline function map<S>(f:T->S):Array<S> {
 		var result = Syntax.arrayDecl();
-		var i = 0;
-		while (i < length) {
-			result.push(f(arr[i]));
-			i++;
+		for(item in arr) {
+			result.push(f(item));
 		}
 		return wrap(result);
 	}
@@ -124,8 +121,8 @@ final class Array<T> implements ArrayAccess<Int, T> {
 	}
 
 	public inline function push(x:T):Int {
-		arr[length] = x;
-		return ++length;
+		arr[length++] = x;
+		return length;
 	}
 
 	public function remove(x:T):Bool {
@@ -215,8 +212,8 @@ final class Array<T> implements ArrayAccess<Int, T> {
 	@:noCompletion
 	function offsetSet(offset:Int, value:T):Void {
 		if (length <= offset) {
-			if (length < offset) {
-				arr = Global.array_pad(arr, offset + 1, null);
+			for(i in length...offset + 1) {
+				arr[i] = null;
 			}
 			length = offset + 1;
 		}
@@ -230,6 +227,16 @@ final class Array<T> implements ArrayAccess<Int, T> {
 			Global.array_splice(arr, offset, 1);
 			--length;
 		}
+	}
+
+	@:noCompletion @:keep
+	private function getIterator():Traversable {
+		return new NativeArrayIterator(arr);
+	}
+
+	@:noCompletion @:keep
+	function jsonSerialize():NativeIndexedArray<T> {
+		return arr;
 	}
 
 	static function wrap<T>(arr:NativeIndexedArray<T>):Array<T> {

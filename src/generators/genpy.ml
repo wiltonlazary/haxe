@@ -1104,7 +1104,7 @@ module Printer = struct
 	let print_base_type tp =
 		try
 			begin match Meta.get Meta.Native tp.mt_meta with
-				| _,[EConst(String s),_],_ -> s
+				| _,[EConst(String(s,_)),_],_ -> s
 				| _ -> raise Not_found
 			end
 		with Not_found ->
@@ -1306,8 +1306,8 @@ module Printer = struct
 					Printf.sprintf "%s(%s,%s)" (third ops) (print_expr pctx e1) (print_expr pctx e2)
 				| _,_ -> Printf.sprintf "(%s %s %s)" (print_expr pctx e1) (snd ops) (print_expr pctx e2))
 			| TBinop(OpMod,e1,e2) when (is_type1 "" "Int")(e1.etype) && (is_type1 "" "Int")(e2.etype) ->
-				(match e1.eexpr with
-				| TConst(TInt(x)) when (Int32.to_int x) >= 0 ->
+				(match e1.eexpr, e2.eexpr with
+				| TConst(TInt(x1)), TConst(TInt(x2)) when (Int32.to_int x1) >= 0 && (Int32.to_int x2) >= 0 ->
 					(* constant optimization *)
 					Printf.sprintf "%s %% %s" (print_expr pctx e1) (print_expr pctx e2)
 				| _ ->
@@ -1648,7 +1648,7 @@ module Printer = struct
 					if Meta.has Meta.Native cf.cf_meta then begin
 						let _, args, mp = Meta.get Meta.Native cf.cf_meta in
 						match args with
-						| [( EConst(String s),_)] -> PMap.add f s acc
+						| [( EConst(String(s,_)),_)] -> PMap.add f s acc
 						| _ -> acc
 					end else acc
 				in
@@ -1880,7 +1880,7 @@ module Generator = struct
 	let gen_py_metas ctx metas indent =
 		List.iter (fun (n,el,_) ->
 			match el with
-				| [EConst(String s),_] ->
+				| [EConst(String(s,_)),_] ->
 					print ctx "%s@%s\n" indent s
 				| _ ->
 					assert false
@@ -2251,10 +2251,14 @@ module Generator = struct
 		List.iter (fun ef ->
 			match follow ef.ef_type with
 			| TFun(args, _) ->
+				let arg_name hx_name =
+					let name = handle_keywords hx_name in
+					if name = p_name then p_name ^ "_" ^ name
+					else name
+				in
 				let print_args args =
 					let had_optional = ref false in
 					let sl = List.map (fun (n,o,_) ->
-						let name = handle_keywords n in
 						let arg_value = if !had_optional then
 							"= None"
 						else if o then begin
@@ -2263,7 +2267,7 @@ module Generator = struct
 						end else
 							""
 						in
-						Printf.sprintf "%s%s" name arg_value
+						Printf.sprintf "%s%s" (arg_name n) arg_value
 					) args in
 					String.concat "," sl
 				in
@@ -2271,8 +2275,8 @@ module Generator = struct
 				let param_str = print_args args in
 				let args_str =
 					match args with
-					| [(n,_,_)] -> (handle_keywords n) ^ ","
-					| args -> String.concat "," (List.map (fun (n,_,_) -> handle_keywords n) args)
+					| [(n,_,_)] -> (arg_name n) ^ ","
+					| args -> String.concat "," (List.map (fun (n,_,_) -> arg_name n) args)
 				in
 				newline ctx;
 				newline ctx;
@@ -2365,18 +2369,18 @@ module Generator = struct
 				in
 
 				let import_type,ignore_error = match args with
-					| [(EConst(String(module_name)), _)]
-					| [(EConst(String(module_name)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("false")),_)),_)] ->
+					| [(EConst(String(module_name,_)), _)]
+					| [(EConst(String(module_name,_)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("false")),_)),_)] ->
 						IModule module_name, false
 
-					| [(EConst(String(module_name)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("true")),_)),_)] ->
+					| [(EConst(String(module_name,_)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("true")),_)),_)] ->
 						IModule module_name,true
 
-					| [(EConst(String(module_name)), _); (EConst(String(object_name)), _)]
-					| [(EConst(String(module_name)), _); (EConst(String(object_name)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("false")),_)),_)] ->
+					| [(EConst(String(module_name,_)), _); (EConst(String(object_name,_)), _)]
+					| [(EConst(String(module_name,_)), _); (EConst(String(object_name,_)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("false")),_)),_)] ->
 						IObject (module_name,object_name), false
 
-					| [(EConst(String(module_name)), _); (EConst(String(object_name)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("true")),_)),_)] ->
+					| [(EConst(String(module_name,_)), _); (EConst(String(object_name,_)), _); (EBinop(OpAssign, (EConst(Ident("ignoreError")),_), (EConst(Ident("true")),_)),_)] ->
 						IObject (module_name,object_name), true
 					| _ ->
 						abort "Unsupported @:pythonImport format" mp
@@ -2501,8 +2505,15 @@ module Generator = struct
 		if has_feature ctx "closure_Array" || has_feature ctx "closure_String" then
 			spr ctx "from functools import partial as _hx_partial\n";
 		spr ctx "import sys\n";
-		spr ctx "if sys.stdout.encoding != 'utf-8':\n    sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf8', buffering=1)\n";
-		spr ctx "if sys.stderr.encoding != 'utf-8':\n    sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf8', buffering=1)\n\n";
+		if defined com Define.StdEncodingUtf8 then begin
+			spr ctx "try:\n";
+			spr ctx "    if sys.stdout.encoding != 'utf-8':\n";
+			spr ctx "        sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf8', buffering=1)\n";
+			spr ctx "    if sys.stderr.encoding != 'utf-8':\n";
+			spr ctx "        sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf8', buffering=1)\n";
+			spr ctx "except:\n";
+			spr ctx "    pass\n";
+		end;
 		gen_imports ctx;
 		gen_resources ctx;
 		gen_types ctx;

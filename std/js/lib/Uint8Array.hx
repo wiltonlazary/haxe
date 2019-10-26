@@ -32,7 +32,7 @@ import js.lib.intl.NumberFormat.NumberFormatOptions;
 	Documentation [Uint8Array](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array) by [Mozilla Contributors](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array$history), licensed under [CC-BY-SA 2.5](https://creativecommons.org/licenses/by-sa/2.5/).
 **/
 @:native("Uint8Array")
-extern class Uint8Array implements ArrayAccess<Int> {
+extern class Uint8Array implements ArrayBufferView implements ArrayAccess<Int> {
 	/**
 		Returns a number value of the element size. 1 in the case of an `Uint8Array`.
 	 */
@@ -90,7 +90,7 @@ extern class Uint8Array implements ArrayAccess<Int> {
 		Returns a new Array Iterator object that contains the key/value pairs for each index in the array.
 		See also [Array.prototype.entries()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/entries).
 	 */
-	@:pure function entries():Iterator<Int>;
+	@:pure function entries():js.lib.Iterator<KeyValue<Int, Int>>;
 
 	/**
 		Tests whether all elements in the array pass the test provided by a function.
@@ -160,7 +160,7 @@ extern class Uint8Array implements ArrayAccess<Int> {
 		Returns a new Array Iterator that contains the keys for each index in the array.
 		See also [Array.prototype.keys()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/keys).
 	 */
-	@:pure function keys():Iterator<Int>;
+	@:pure function keys():js.lib.Iterator<Int>;
 
 	/**
 		Returns the last (greatest) index of an element within the array equal to the specified value, or -1 if none is found.
@@ -247,7 +247,7 @@ extern class Uint8Array implements ArrayAccess<Int> {
 		Returns a new Array Iterator object that contains the values for each index in the array.
 		See also [Array.prototype.values()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/values).
 	 */
-	@:pure function values():Iterator<Int>;
+	@:pure function values():js.lib.Iterator<Int>;
 
 	/**
 		Returns a string representing the array and its elements.

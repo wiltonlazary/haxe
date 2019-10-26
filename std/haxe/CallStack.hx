@@ -29,7 +29,7 @@ enum StackItem {
 	CFunction;
 	Module(m:String);
 	FilePos(s:Null<StackItem>, file:String, line:Int, ?column:Null<Int>);
-	Method(classname:String, method:String);
+	Method(classname:Null<String>, method:String);
 	LocalFunction(?v:Int);
 }
 
@@ -43,15 +43,15 @@ class CallStack {
 	static function getStack(e:js.lib.Error):Array<StackItem> {
 		if (e == null)
 			return [];
-		// https://code.google.com/p/v8/wiki/JavaScriptStackTraceApi
-		var oldValue = (untyped Error).prepareStackTrace;
-		(untyped Error).prepareStackTrace = function(error, callsites:Array<Dynamic>) {
+		// https://v8.dev/docs/stack-trace-api
+		var oldValue = V8Error.prepareStackTrace;
+		V8Error.prepareStackTrace = function(error, callsites) {
 			var stack = [];
 			for (site in callsites) {
 				if (wrapCallSite != null)
 					site = wrapCallSite(site);
 				var method = null;
-				var fullName:String = site.getFunctionName();
+				var fullName = site.getFunctionName();
 				if (fullName != null) {
 					var idx = fullName.lastIndexOf(".");
 					if (idx >= 0) {
@@ -60,7 +60,7 @@ class CallStack {
 						method = Method(className, methodName);
 					}
 				}
-				var fileName:String = site.getFileName();
+				var fileName = site.getFileName();
 				var fileAddr = fileName == null ? -1 : fileName.indexOf("file:");
 				if (wrapCallSite != null && fileAddr > 0)
 					fileName = fileName.substr(fileAddr + 6);
@@ -69,13 +69,13 @@ class CallStack {
 			return stack;
 		}
 		var a = makeStack(e.stack);
-		(untyped Error).prepareStackTrace = oldValue;
+		V8Error.prepareStackTrace = oldValue;
 		return a;
 	}
 
 	// support for source-map-support module
 	@:noCompletion
-	public static var wrapCallSite:Dynamic->Dynamic;
+	public static var wrapCallSite:V8CallSite->V8CallSite;
 	#end
 
 	#if eval
@@ -137,7 +137,7 @@ class CallStack {
 		infos.pop();
 		infos.reverse();
 		for (elem in infos)
-			stack.push(FilePos(null, elem._1, elem._2));
+			stack.push(FilePos(Method(null, elem._3), elem._1, elem._2));
 		return stack;
 		#elseif lua
 		var stack = [];
@@ -147,8 +147,17 @@ class CallStack {
 			var parts = s.split(":");
 			var file = parts[0];
 			var line = parts[1];
-			// TODO: Give more information for FilePos
-			stack.push(FilePos(null, file, Std.parseInt(line)));
+			var method = if(parts.length <= 2) {
+				null;
+			} else {
+				var methodPos = parts[2].indexOf("'");
+				if(methodPos < 0) {
+					null;
+				} else {
+					Method(null, parts[2].substring(methodPos + 1, parts[2].length - 1));
+				}
+			}
+			stack.push(FilePos(method, file, Std.parseInt(line)));
 		}
 		return stack;
 		#elseif hl
@@ -232,7 +241,7 @@ class CallStack {
 			var infos = python.lib.Traceback.extract_tb(exc._3);
 			infos.reverse();
 			for (elem in infos)
-				stack.push(FilePos(null, elem._1, elem._2));
+				stack.push(FilePos(Method(null, elem._3), elem._1, elem._2));
 		}
 		return stack;
 		#elseif js
@@ -278,7 +287,7 @@ class CallStack {
 				if (s != null)
 					b.add(")");
 			case Method(cname, meth):
-				b.add(cname);
+				b.add(cname == null ? "<unknown>" : cname);
 				b.add(".");
 				b.add(meth);
 			case LocalFunction(n):
@@ -404,3 +413,18 @@ class CallStack {
 		#end
 	}
 }
+
+#if js
+// https://v8.dev/docs/stack-trace-api
+@:native("Error")
+private extern class V8Error {
+	static var prepareStackTrace:(error:js.lib.Error, structuredStackTrace:Array<V8CallSite>)->Any;
+}
+
+typedef V8CallSite = {
+	function getFunctionName():String;
+	function getFileName():String;
+	function getLineNumber():Int;
+	function getColumnNumber():Int;
+}
+#end

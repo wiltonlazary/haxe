@@ -34,7 +34,7 @@ import js.lib.intl.NumberFormat.NumberFormatOptions;
 	Documentation [Float64Array](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float64Array) by [Mozilla Contributors](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float64Array$history), licensed under [CC-BY-SA 2.5](https://creativecommons.org/licenses/by-sa/2.5/).
 **/
 @:native("Float64Array")
-extern class Float64Array implements ArrayAccess<Float> {
+extern class Float64Array implements ArrayBufferView implements ArrayAccess<Float> {
 	/**
 		Returns a number value of the element size. 8 in the case of an `Float64Array`.
 	 */
@@ -92,7 +92,7 @@ extern class Float64Array implements ArrayAccess<Float> {
 		Returns a new Array Iterator object that contains the key/value pairs for each index in the array.
 		See also [Array.prototype.entries()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/entries).
 	 */
-	@:pure function entries():Iterator<Int>;
+	@:pure function entries():js.lib.Iterator<KeyValue<Int, Float>>;
 
 	/**
 		Tests whether all elements in the array pass the test provided by a function.
@@ -162,7 +162,7 @@ extern class Float64Array implements ArrayAccess<Float> {
 		Returns a new Array Iterator that contains the keys for each index in the array.
 		See also [Array.prototype.keys()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/keys).
 	 */
-	@:pure function keys():Iterator<Int>;
+	@:pure function keys():js.lib.Iterator<Int>;
 
 	/**
 		Returns the last (greatest) index of an element within the array equal to the specified value, or -1 if none is found.
@@ -218,7 +218,8 @@ extern class Float64Array implements ArrayAccess<Float> {
 	@:overload(function(array:Uint32Array, ?offset:Int):Void {})
 	@:overload(function(array:Float32Array, ?offset:Int):Void {})
 	@:overload(function(array:Float64Array, ?offset:Int):Void {})
-	function set(array:Array<Int>, ?offset:Int):Void;
+	@:overload(function(array:Array<Int>, ?offset:Int):Void {})
+	function set(array:Array<Float>, ?offset:Int):Void;
 
 	/**
 		Extracts a section of an array and returns a new array.
@@ -249,7 +250,7 @@ extern class Float64Array implements ArrayAccess<Float> {
 		Returns a new Array Iterator object that contains the values for each index in the array.
 		See also [Array.prototype.values()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/values).
 	 */
-	@:pure function values():Iterator<Float>;
+	@:pure function values():js.lib.Iterator<Float>;
 
 	/**
 		Returns a string representing the array and its elements.

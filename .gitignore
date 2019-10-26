@@ -120,6 +120,7 @@ tmp.tmp
 dev-display.hxml
 
 .DS_Store
+.history
 tests/sourcemaps/bin
 /*_plugin.ml
 tests/benchs/export/
@@ -127,3 +128,7 @@ tests/benchs/dump/
 tests/display/.unittest/
 tests/unit/.unittest/
 tests/threads/export/
+tests/server/test.js.map
+*.merlin
+lib.sexp
+src/compiler/version.ml

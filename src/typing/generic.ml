@@ -38,21 +38,28 @@ let make_generic ctx ps pt p =
 			let rec subst s = "_" ^ string_of_int (Char.code (String.get (Str.matched_string s) 0)) ^ "_" in
 			let ident_safe = Str.global_substitute (Str.regexp "[^a-zA-Z0-9_]") subst in
 			let s_type_path_underscore (p,s) = match p with [] -> s | _ -> String.concat "_" p ^ "_" ^ s in
-			let rec loop top t = match follow t with
+			let rec loop top t = match t with
 				| TInst(c,tl) -> (match c.cl_kind with
 					| KExpr e -> ident_safe (Ast.Printer.s_expr e)
-					| _ -> (ident_safe (s_type_path_underscore c.cl_path)) ^ (loop_tl tl))
-				| TEnum(en,tl) -> (s_type_path_underscore en.e_path) ^ (loop_tl tl)
+					| _ -> (ident_safe (s_type_path_underscore c.cl_path)) ^ (loop_tl top tl))
+				| TType (td,tl) -> (s_type_path_underscore td.t_path) ^ (loop_tl top tl)
+				| TEnum(en,tl) -> (s_type_path_underscore en.e_path) ^ (loop_tl top tl)
 				| TAnon(a) -> "anon_" ^ String.concat "_" (PMap.foldi (fun s f acc -> (s ^ "_" ^ (loop false (follow f.cf_type))) :: acc) a.a_fields [])
 				| TFun(args, return_type) -> "func_" ^ (String.concat "_" (List.map (fun (_, _, t) -> loop false t) args)) ^ "_" ^ (loop false return_type)
-				| TAbstract(a,tl) -> (s_type_path_underscore a.a_path) ^ (loop_tl tl)
-				| _ when not top -> "_" (* allow unknown/incompatible types as type parameters to retain old behavior *)
-				| TMono _ -> raise (Generic_Exception (("Could not determine type for parameter " ^ s), p))
+				| TAbstract(a,tl) -> (s_type_path_underscore a.a_path) ^ (loop_tl top tl)
+				| _ when not top ->
+					follow_or t top (fun() -> "_") (* allow unknown/incompatible types as type parameters to retain old behavior *)
+				| TMono { tm_type = None } -> raise (Generic_Exception (("Could not determine type for parameter " ^ s), p))
 				| TDynamic _ -> "Dynamic"
-				| t -> raise (Generic_Exception (("Unsupported type parameter: " ^ (s_type (print_context()) t) ^ ")"), p))
-			and loop_tl tl = match tl with
+				| t ->
+					follow_or t top (fun() -> raise (Generic_Exception (("Unsupported type parameter: " ^ (s_type (print_context()) t) ^ ")"), p)))
+			and loop_tl top tl = match tl with
 				| [] -> ""
-				| tl -> "_" ^ String.concat "_" (List.map (loop false) tl)
+				| tl -> "_" ^ String.concat "_" (List.map (loop top) tl)
+			and follow_or t top or_fn =
+				let ft = follow_once t in
+				if ft == t then or_fn()
+				else loop top ft
 			in
 			loop true t
 		) ps pt)
@@ -192,7 +199,7 @@ let rec build_generic ctx c p tl =
 			| TType (t,tl) -> add_dep t.t_module tl
 			| TAbstract (a,tl) -> add_dep a.a_module tl
 			| TMono r ->
-				(match !r with
+				(match r.tm_type with
 				| None -> ()
 				| Some t -> loop t)
 			| TLazy f ->
@@ -303,7 +310,7 @@ let rec build_generic ctx c p tl =
 		(* In rare cases the class name can become too long, so let's shorten it (issue #3090). *)
 		if String.length (snd cg.cl_path) > 254 then begin
 			let n = get_short_name () in
-			cg.cl_meta <- (Meta.Native,[EConst(String (n)),p],null_pos) :: cg.cl_meta;
+			cg.cl_meta <- (Meta.Native,[EConst(String (n,SDoubleQuotes)),p],null_pos) :: cg.cl_meta;
 		end;
 		TInst (cg,[])
 	end

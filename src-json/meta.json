@@ -247,6 +247,12 @@
 		"internal": true
 	},
 	{
+		"name": "DisplayOverride",
+		"metadata": ":?display.override",
+		"doc": "Internally used to mark override fields for completion",
+		"internal": true
+	},
+	{
 		"name": "DynamicObject",
 		"metadata": ":dynamicObject",
 		"doc": "Used internally to identify the Dynamic Object implementation.",
@@ -509,6 +515,13 @@
 		"internal": true
 	},
 	{
+		"name": "ImplicitReturn",
+		"metadata": ":implicitReturn",
+		"doc": "Generated automatically on the AST when an implicit return is inserted for arrow function.",
+		"targets": ["TExpr"],
+		"internal": true
+	},
+	{
 		"name": "Include",
 		"metadata": ":include",
 		"doc": "",
@@ -710,6 +723,12 @@
 		"doc": "Prevents the compiler from suggesting completion on this field or type.",
 		"targets": ["TClassField"],
 		"links": ["https://haxe.org/manual/cr-completion.html"]
+	},
+	{
+		"name": "NoClosure",
+		"metadata": ":noClosure",
+		"doc": "Prevents a method or all methods in a class from being used as a value.",
+		"targets": ["TClass", "TClassField"]
 	},
 	{
 		"name": "NoDebug",

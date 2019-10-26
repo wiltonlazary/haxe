@@ -1,5 +1,8 @@
 open Meta
-open Type
+open TType
+open TFunctions
+open TPrinting
+open TUnification
 open Error
 
 let build_abstract a = match a.a_impl with
@@ -49,11 +52,11 @@ let find_from ab pl a b =
 
 let underlying_type_stack = new_rec_stack()
 
-let rec get_underlying_type a pl =
+let rec get_underlying_type ?(return_first=false) a pl =
 	let maybe_recurse t =
 		let rec loop t = match t with
 			| TMono r ->
-				(match !r with
+				(match r.tm_type with
 				| Some t -> loop t
 				| _ -> t)
 			| TLazy f ->
@@ -68,7 +71,13 @@ let rec get_underlying_type a pl =
 					let s = String.concat " -> " (List.map (fun t -> s_type pctx t) (List.rev (t :: underlying_type_stack.rec_stack))) in
 					error ("Abstract chain detected: " ^ s) a.a_pos
 				end;
-				get_underlying_type a tl
+				(*
+					Even if only the first underlying type was requested
+					keep traversing to detect mutually recursive abstracts
+				*)
+				let result = get_underlying_type a tl in
+				if return_first then t
+				else result
 			| _ ->
 				t
 		in
@@ -76,6 +85,10 @@ let rec get_underlying_type a pl =
 	in
 	try
 		if not (Meta.has Meta.MultiType a.a_meta) then raise Not_found;
+		(* TODO:
+			Look into replacing `mk_mono` & `find_to` with `build_abstract a` & `TAbstract(a, pl)`.
+			`find_to` is probably needed for `@:multiType`
+		*)
 		let m = mk_mono() in
 		let _ = find_to a pl m in
 		maybe_recurse (follow m)

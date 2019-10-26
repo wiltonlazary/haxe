@@ -343,18 +343,10 @@ import cs.NativeArray;
 		}
 	}
 
-	/**
-		Returns an iterator of all keys in the hashtable.
-		Implementation detail: Do not set() any new value while iterating, as it may cause a resize, which will break iteration
-	**/
 	public inline function keys():Iterator<Int> {
 		return new IntMapKeyIterator(this);
 	}
 
-	/**
-		Returns an iterator of all values in the hashtable.
-		Implementation detail: Do not set() any new value while iterating, as it may cause a resize, which will break iteration
-	**/
 	public inline function iterator():Iterator<T> {
 		return new IntMapValueIterator(this);
 	}
@@ -370,9 +362,6 @@ import cs.NativeArray;
 		return copied;
 	}
 
-	/**
-		Returns an displayable representation of the hashtable content.
-	**/
 	public function toString():String {
 		var s = new StringBuf();
 		s.add("{");
@@ -386,6 +375,20 @@ import cs.NativeArray;
 		}
 		s.add("}");
 		return s.toString();
+	}
+
+	public function clear():Void {
+		flags = null;
+		_keys = null;
+		vals = null;
+		nBuckets = 0;
+		size = 0;
+		nOccupied = 0;
+		upperBound = 0;
+		#if !no_map_cache
+		cachedKey = 0;
+		cachedIndex = -1;
+		#end
 	}
 
 	private static inline function assert(x:Bool):Void {

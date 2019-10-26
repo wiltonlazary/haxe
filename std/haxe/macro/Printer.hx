@@ -165,7 +165,7 @@ class Printer {
 			+ (field.meta != null && field.meta.length > 0 ? field.meta.map(printMetadata).join('\n$tabs') + '\n$tabs' : "")
 			+ (field.access != null && field.access.length > 0 ? field.access.map(printAccess).join(" ") + " " : "")
 			+ switch (field.kind) {
-				case FVar(t, eo): 'var ${field.name}' + opt(t, printComplexType, " : ") + opt(eo, printExpr, " = ");
+				case FVar(t, eo): ((field.access != null && field.access.has(AFinal)) ? '' : 'var ') + '${field.name}' + opt(t, printComplexType, " : ") + opt(eo, printExpr, " = ");
 				case FProp(get, set, t, eo): 'var ${field.name}($get, $set)' + opt(t, printComplexType, " : ") + opt(eo, printExpr, " = ");
 				case FFun(func): 'function ${field.name}' + printFunction(func);
 			}
@@ -217,7 +217,7 @@ class Printer {
 			case ENew(tp, el): 'new ${printTypePath(tp)}(${printExprs(el, ", ")})';
 			case EUnop(op, true, e1): printExpr(e1) + printUnop(op);
 			case EUnop(op, false, e1): printUnop(op) + printExpr(e1);
-			case EFunction(no, func) if (no != null): 'function $no' + printFunction(func);
+			case EFunction(FNamed(no,inlined), func): (inlined ? 'inline ' : '') + 'function $no' + printFunction(func);
 			case EFunction(_, func): "function" + printFunction(func);
 			case EVars(vl): "var " + vl.map(printVar).join(", ");
 			case EBlock([]): '{ }';
@@ -438,7 +438,7 @@ class Printer {
 							loopI(v.expr);
 						}
 					}
-				case EFunction(name, f):
+				case EFunction(_, f):
 					add("EFunction");
 					if (f.expr != null) {
 						loopI(f.expr);

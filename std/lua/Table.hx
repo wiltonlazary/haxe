@@ -29,10 +29,7 @@ package lua;
 
 @:native("_G.table")
 extern class Table<A, B> implements ArrayAccess<B> implements Dynamic<B> {
-	@:analyzer(no_fusion)
-	public inline static function create<A, B>(?arr:Array<B>, ?hsh:Dynamic):Table<A, B> {
-		return untyped __lua_table__(arr, hsh);
-	}
+	@:pure public static function create<A, B>(?arr:Array<B>, ?hsh:Dynamic):Table<A, B>;
 
 	public inline static function fromArray<T>(arr:Array<T>):Table<Int, T> {
 		var ret = Table.create();
@@ -59,7 +56,7 @@ extern class Table<A, B> implements ArrayAccess<B> implements Dynamic<B> {
 	}
 
 	@:overload(function<A, B>(table:Table<A, B>):Void {})
-	public static function concat<A, B>(table:Table<A, B>, ?sep:String):String;
+	public static function concat<A, B>(table:Table<A, B>, ?sep:String, ?i:Int, ?j:Int):String;
 
 	public static function foreach<A, B>(table:Table<A, B>, f:A->B->Void):Void;
 	public static function foreachi<A, B>(table:Table<A, B>, f:A->B->Int->Void):Void;

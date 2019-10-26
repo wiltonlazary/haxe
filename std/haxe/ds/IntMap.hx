@@ -57,11 +57,17 @@ extern class IntMap<T> implements haxe.Constraints.IMap<Int, T> {
 
 	/**
 		See `Map.keys`
+
+		(cs, java) Implementation detail: Do not `set()` any new value while
+		iterating, as it may cause a resize, which will break iteration.
 	**/
 	public function keys():Iterator<Int>;
 
 	/**
 		See `Map.iterator`
+
+		(cs, java) Implementation detail: Do not `set()` any new value while
+		iterating, as it may cause a resize, which will break iteration.
 	**/
 	public function iterator():Iterator<T>;
 
@@ -85,4 +91,9 @@ extern class IntMap<T> implements haxe.Constraints.IMap<Int, T> {
 		See `Map.toString`
 	**/
 	public function toString():String;
+
+	/**
+		See `Map.clear`
+	**/
+	public function clear():Void;
 }
