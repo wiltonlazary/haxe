@@ -203,6 +203,7 @@ let rec jsignature_of_type stack t =
 			| ["java"],"Char16" -> TChar
 			| [],"Single" -> TFloat
 			| [],"Float" -> TDouble
+			| [],"Void" -> void_sig
 			| [],"Null" ->
 				begin match tl with
 				| [t] -> get_boxed_type (jsignature_of_type t)
@@ -577,11 +578,8 @@ class texpr_to_jvm gctx (jc : JvmClass.builder) (jm : JvmMethod.builder) (return
 	method expect_reference_type = jm#expect_reference_type
 
 	method cast t =
-		if follow t != t_dynamic then begin
-			let vt = self#vtype t in
-			jm#cast vt
-		end else
-			self#expect_reference_type
+		let vt = self#vtype t in
+		jm#cast vt
 
 	method cast_expect ret t = match ret with
 		| RValue (Some jsig) -> jm#cast jsig
@@ -2761,7 +2759,9 @@ let debug_path path = match path with
 
 let is_extern_abstract a = match a.a_impl with
 	| Some {cl_extern = true} -> true
-	| _ -> false
+	| _ -> match a.a_path with
+		| ([],("Void" | "Float" | "Int" | "Single" | "Bool" | "Null")) -> true
+		| _ -> false
 
 let generate_module_type ctx mt =
 	failsafe (t_infos mt).mt_pos (fun () ->
